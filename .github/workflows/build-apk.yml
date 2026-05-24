@@ -36,15 +36,15 @@ jobs:
 
       - name: Install Android SDK platform 36 and build tools
         run: |
-          export ANDROID_HOME=$ANDROID_SDK_ROOT
           yes | sdkmanager --licenses > /dev/null 2>&1 || true
           sdkmanager "platforms;android-36" "build-tools;35.0.0" "platform-tools" 2>&1 | tail -5
-
-      - name: Build Debug APK
         env:
           ANDROID_HOME: ${{ env.ANDROID_SDK_ROOT }}
-        run: |
-          gradle assembleDebug --no-daemon --stacktrace 2>&1
+
+      - name: Build Debug APK
+        run: gradle assembleDebug --no-daemon --stacktrace 2>&1
+        env:
+          ANDROID_HOME: ${{ env.ANDROID_SDK_ROOT }}
 
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4
