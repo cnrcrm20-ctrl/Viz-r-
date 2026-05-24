@@ -1,44 +1,65 @@
 name: Build Debug APK
 
-  on:
-    push:
-      branches: [ main ]
-    workflow_dispatch:
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
 
-  jobs:
-    build:
-      runs-on: ubuntu-latest
+jobs:
+  build:
+    runs-on: ubuntu-latest
 
-      steps:
-        - name: Checkout code
-          uses: actions/checkout@v4
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-        - name: Set up JDK 17
-          uses: actions/setup-java@v4
-          with:
-            java-version: '17'
-            distribution: 'temurin'
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
 
-        - name: Cache Gradle packages
-          uses: actions/cache@v4
-          with:
-            path: |
-              ~/.gradle/caches
-              ~/.gradle/wrapper
-            key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
-            restore-keys: |
-              ${{ runner.os }}-gradle-
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.13"
 
-        - name: Grant execute permission for gradlew
-          run: chmod +x gradlew
+      - name: Cache Gradle packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', '**/libs.versions.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
 
-        - name: Build Debug APK
-          run: ./gradlew assembleDebug --no-daemon --stacktrace
+      - name: Install Android SDK platform 36 and build tools
+        run: |
+          export ANDROID_HOME=$ANDROID_SDK_ROOT
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager "platforms;android-36" "build-tools;35.0.0" "platform-tools" 2>&1 | tail -5
 
-        - name: Upload Debug APK
-          uses: actions/upload-artifact@v4
-          with:
-            name: vizor-debug-apk
-            path: app/build/outputs/apk/debug/app-debug.apk
-            retention-days: 30
-  
+      - name: Build Debug APK
+        env:
+          ANDROID_HOME: ${{ env.ANDROID_SDK_ROOT }}
+        run: |
+          gradle assembleDebug --no-daemon --stacktrace 2>&1
+
+      - name: Upload Debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Vizor-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 30
+
+      - name: Show APK info
+        run: |
+          APK_PATH="app/build/outputs/apk/debug/app-debug.apk"
+          if [ -f "$APK_PATH" ]; then
+            echo "✅ APK başarıyla oluşturuldu!"
+            echo "Boyut: $(du -sh $APK_PATH | cut -f1)"
+          else
+            echo "❌ APK bulunamadı"
+            find app/build -name "*.apk" 2>/dev/null || echo "Hiç APK yok"
+          fi
