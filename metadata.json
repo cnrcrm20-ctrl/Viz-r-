@@ -1,0 +1,6 @@
+{
+  "name": "Vizör",
+  "description": "Premium optimized mobile social app with Reels, real-time chat, dynamic custom themes, and an offline-first Arcade Zone featuring Car Game, Snake, and Okey.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
