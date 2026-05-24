@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "137111396125",
+    "project_id": "vizor-ff137",
+    "storage_bucket": "vizor-ff137.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:137111396125:android:38dfa2458e3eafed75cbf4",
+        "android_client_info": {
+          "package_name": "com.android.vizor.org"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCyp7ABBy0J5929lNtLGl34sFKwxgJKs2c"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

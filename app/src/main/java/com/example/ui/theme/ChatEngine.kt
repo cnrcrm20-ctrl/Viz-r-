@@ -158,10 +158,11 @@ object ChatEngine {
         try {
             if (com.google.firebase.FirebaseApp.getApps(context).isEmpty()) {
                 val options = com.google.firebase.FirebaseOptions.Builder()
-                    .setApiKey("AIzaSyB_production_integration_for_google_play")
-                    .setApplicationId("1:149514319997:android:21e8981fd46249de")
-                    .setProjectId("vizor-app-production")
-                    .setStorageBucket("vizor-app-production.appspot.com")
+                    .setApiKey("AIzaSyCyp7ABBy0J5929lNtLGl34sFKwxgJKs2c")
+                    .setApplicationId("1:137111396125:android:38dfa2458e3eafed75cbf4")
+                    .setProjectId("vizor-ff137")
+                    .setStorageBucket("vizor-ff137.firebasestorage.app")
+                    .setGcmSenderId("137111396125")
                     .build()
                 com.google.firebase.FirebaseApp.initializeApp(context, options)
             }
@@ -285,7 +286,7 @@ object ChatEngine {
      */
     fun signInWithFirebase(email: String, password: String, onComplete: (Boolean, String?) -> Unit) {
         if (!isFirebaseAvailable) {
-            onComplete(true, null)
+            onComplete(false, "Firebase bağlantısı kurulamadı.")
             return
         }
         try {
@@ -299,7 +300,77 @@ object ChatEngine {
                     }
                 }
         } catch (e: Exception) {
-            onComplete(true, null)
+            onComplete(false, e.localizedMessage ?: "Giriş sırasında hata oluştu.")
+        }
+    }
+
+    /**
+     * Firebase Authentication: Signs in with Google ID token credential.
+     */
+    fun signInWithGoogleCredential(
+        idToken: String,
+        onComplete: (Boolean, String?, String?) -> Unit
+    ) {
+        if (!isFirebaseAvailable) {
+            onComplete(false, null, "Firebase bağlantısı kurulamadı.")
+            return
+        }
+        try {
+            val credential = com.google.firebase.auth.GoogleAuthProvider.getCredential(idToken, null)
+            com.google.firebase.auth.FirebaseAuth.getInstance()
+                .signInWithCredential(credential)
+                .addOnCompleteListener { task ->
+                    if (task.isSuccessful) {
+                        val user = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser
+                        val displayName = user?.displayName ?: user?.email?.substringBefore("@") ?: "Kaşif"
+                        val email = user?.email ?: ""
+                        val uid = user?.uid ?: ""
+                        val username = email.substringBefore("@").replace(".", "_").take(15).ifEmpty { "user_$uid" }
+                        // Create/update user profile in Firestore
+                        val profile = mapOf(
+                            "displayName" to displayName,
+                            "bio" to "Vizör kâşifi! 🛰️",
+                            "avatarColor" to "#2196F3",
+                            "followers" to emptyList<String>(),
+                            "following" to emptyList<String>(),
+                            "isVerified" to false,
+                            "googleUid" to uid
+                        )
+                        com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                            .collection("users")
+                            .document(username)
+                            .set(profile, com.google.firebase.firestore.SetOptions.merge())
+                        reserveHandle(username)
+                        onComplete(true, displayName, null)
+                    } else {
+                        onComplete(false, null, task.exception?.localizedMessage ?: "Google girişi başarısız.")
+                    }
+                }
+        } catch (e: Exception) {
+            onComplete(false, null, e.localizedMessage ?: "Google girişi sırasında hata oluştu.")
+        }
+    }
+
+    /**
+     * Returns the currently signed-in Firebase user display name, or null.
+     */
+    fun getCurrentUserDisplayName(): String? {
+        return try {
+            com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.displayName
+                ?: com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.email?.substringBefore("@")
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    /**
+     * Signs out the current Firebase user.
+     */
+    fun signOut() {
+        try {
+            com.google.firebase.auth.FirebaseAuth.getInstance().signOut()
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
     }
 

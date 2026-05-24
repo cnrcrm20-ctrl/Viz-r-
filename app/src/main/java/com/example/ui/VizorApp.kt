@@ -54,6 +54,13 @@ import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.credentials.CredentialManager
+import androidx.credentials.GetCredentialRequest
+import androidx.credentials.exceptions.GetCredentialException
+import com.google.android.libraries.identity.googleid.GetGoogleIdOption
+import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 // Persistent Friendship Data Structure (Offline-first persistent representation)
 data class VizorFriend(
@@ -343,6 +350,7 @@ fun VizorApp(context: Context) {
                             },
                             onLogout = {
                                 authPrefs.edit().remove("logged_user").apply()
+                                ChatEngine.signOut()
                                 userSessionName = null
                             }
                         )
@@ -390,11 +398,9 @@ fun AuthScreen(
     var numB by remember { mutableStateOf(Random.nextInt(1, 10)) }
     var captchaAnswerField by remember { mutableStateOf("") }
 
-    // Google accounts picker state
-    var showGoogleAccountPicker by remember { mutableStateOf(false) }
-    var isVerifyingGoogleAccount by remember { mutableStateOf(false) }
-    var googleAccountSelected by remember { mutableStateOf("") }
-    var googleEmailSelected by remember { mutableStateOf("") }
+    // Google Sign-In state
+    var isGoogleSigningIn by remember { mutableStateOf(false) }
+    var googleSignInError by remember { mutableStateOf<String?>(null) }
 
     // Enforce 100% Unique Handle Checker
     val isHandleTaken = remember(usernameField) {
@@ -620,12 +626,11 @@ fun AuthScreen(
                             } else {
                                 // Direct email login
                                 ChatEngine.signInWithFirebase(emailField, passwordField) { success, err ->
-                                    val nick = emailField.substringBefore("@")
-                                    if (emailField.trim().lowercase() == "cnrcrm20@gmail.com") {
-                                        // Automatic VIP treatment with automatic operator tag for Google / credentials
-                                        onLoginSuccess("Caner C.", emailField)
-                                    } else {
+                                    if (success) {
+                                        val nick = emailField.substringBefore("@")
                                         onLoginSuccess(nick, emailField)
+                                    } else {
+                                        Toast.makeText(context, err ?: "Giriş başarısız!", Toast.LENGTH_LONG).show()
                                     }
                                 }
                             }
@@ -644,14 +649,62 @@ fun AuthScreen(
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // GOOGLE DELEGATED LOGIN BUTTON TRIGGER
+                    // GOOGLE SIGN-IN BUTTON
+                    if (googleSignInError != null) {
+                        Text(
+                            text = googleSignInError ?: "",
+                            color = Color.Red,
+                            fontSize = 11.sp,
+                            modifier = Modifier.padding(bottom = 4.dp)
+                        )
+                    }
                     OutlinedButton(
-                        onClick = { showGoogleAccountPicker = true },
+                        onClick = {
+                            isGoogleSigningIn = true
+                            googleSignInError = null
+                            coroutineScope.launch {
+                                try {
+                                    val credentialManager = CredentialManager.create(context)
+                                    val googleIdOption = GetGoogleIdOption.Builder()
+                                        .setFilterByAuthorizedAccounts(false)
+                                        .setServerClientId("137111396125-4go2ms0j2b2t2v3h7f6b8a8l2d5e9f0g.apps.googleusercontent.com")
+                                        .build()
+                                    val request = GetCredentialRequest.Builder()
+                                        .addCredentialOption(googleIdOption)
+                                        .build()
+                                    val result = withContext(Dispatchers.IO) {
+                                        credentialManager.getCredential(context as android.app.Activity, request)
+                                    }
+                                    val googleCredential = GoogleIdTokenCredential.createFrom(result.credential.data)
+                                    val idToken = googleCredential.idToken
+                                    ChatEngine.signInWithGoogleCredential(idToken) { success, displayName, err ->
+                                        isGoogleSigningIn = false
+                                        if (success && displayName != null) {
+                                            onLoginSuccess(displayName, googleCredential.id)
+                                        } else {
+                                            googleSignInError = err ?: "Google girişi başarısız."
+                                        }
+                                    }
+                                } catch (e: GetCredentialException) {
+                                    isGoogleSigningIn = false
+                                    googleSignInError = "Google hesabı bulunamadı veya reddedildi."
+                                } catch (e: Exception) {
+                                    isGoogleSigningIn = false
+                                    googleSignInError = e.localizedMessage ?: "Google girişi sırasında hata oluştu."
+                                }
+                            }
+                        },
+                        enabled = !isGoogleSigningIn,
                         border = BorderStroke(1.5.dp, primaryColor.copy(alpha = 0.4f)),
                         shape = RoundedCornerShape(14.dp),
                         modifier = Modifier.fillMaxWidth(),
                         colors = ButtonDefaults.outlinedButtonColors(containerColor = Color.Transparent)
                     ) {
+                        if (isGoogleSigningIn) {
+                            CircularProgressIndicator(color = primaryColor, modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(text = "Google'a bağlanılıyor...", color = textColor, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        } else {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Box(
                                 modifier = Modifier
@@ -665,6 +718,7 @@ fun AuthScreen(
                             }
                             Spacer(modifier = Modifier.width(10.dp))
                             Text(text = "Google ile Giriş Yap", color = textColor, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        }
                         }
                     }
 
@@ -917,101 +971,6 @@ fun AuthScreen(
                 }
             }
 
-            // GOOGLE ACCOUNT PICKER HANDLER SHEET
-            if (showGoogleAccountPicker) {
-                item {
-                    AlertDialog(
-                        onDismissRequest = { showGoogleAccountPicker = false },
-                        title = {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(text = "G", fontWeight = FontWeight.Bold, color = Color(0xFF4285F4), fontSize = 20.sp)
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(text = "Google ile Devam Et", fontSize = 16.sp, color = textColor)
-                            }
-                        },
-                        text = {
-                            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                Text(text = "Cihazda bağlı Google hesabını yetkilendirerek hızlı profil oluşturun.", fontSize = 12.sp, color = textColor.copy(alpha = 0.6f))
-                                Divider(color = textColor.copy(alpha = 0.1f))
-
-                                // Real admin account automatically granted operator VIP
-                                GoogleAccountRow(
-                                    name = "Caner Yıldırım",
-                                    email = "cnrcrm20@gmail.com",
-                                    initial = "C",
-                                    avatarBg = Color(0xFF4285F4),
-                                    textColor = textColor,
-                                    onClick = {
-                                        googleAccountSelected = "Caner"
-                                        googleEmailSelected = "cnrcrm20@gmail.com"
-                                        isVerifyingGoogleAccount = true
-                                        showGoogleAccountPicker = false
-                                    }
-                                )
-
-                                GoogleAccountRow(
-                                    name = "Vizör Developer Sandbox",
-                                    email = "vizor.designer@gmail.com",
-                                    initial = "V",
-                                    avatarBg = Color(0xFFE91E63),
-                                    textColor = textColor,
-                                    onClick = {
-                                        googleAccountSelected = "VizorDev"
-                                        googleEmailSelected = "vizor.designer@gmail.com"
-                                        isVerifyingGoogleAccount = true
-                                        showGoogleAccountPicker = false
-                                    }
-                                )
-                            }
-                        },
-                        confirmButton = {},
-                        dismissButton = {
-                            TextButton(onClick = { showGoogleAccountPicker = false }) {
-                                Text("İptal", color = primaryColor)
-                            }
-                        },
-                        containerColor = canvasBgColor
-                    )
-                }
-            }
-
-            // GOOGLE LOGIN VERIFYING LATENCY SPINNER
-            if (isVerifyingGoogleAccount) {
-                item {
-                    LaunchedEffect(Unit) {
-                        delay(2200) // play services authentication simulation
-                        isVerifyingGoogleAccount = false
-                        // For Google Sign-Ins, if email matches "cnrcrm20@gmail.com", automatically configure credentials and skip remaining wizard
-                        if (googleEmailSelected.contains("cnrcrm20")) {
-                            usernameField = "cnrcrm20"
-                            displayNameField = "Caner"
-                            biographyField = "Vizör Üretici & Geliştiricisi VIP 👑"
-                            chosenAvatarType = 5
-                            dateOfBirthStr = "20 02 1995"
-                            currentStep = 4 // Direct to stage 4 loading screen
-                        } else {
-                            // Run the wizard starting from step 2 with auto filled name
-                            displayNameField = googleAccountSelected
-                            emailField = googleEmailSelected
-                            currentStep = 2
-                        }
-                    }
-
-                    AlertDialog(
-                        onDismissRequest = {},
-                        title = { Text(text = "Google Play Bağlantısı...", fontSize = 15.sp, color = textColor) },
-                        text = {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-                                CircularProgressIndicator(color = primaryColor, modifier = Modifier.size(40.dp))
-                                Spacer(modifier = Modifier.height(12.dp))
-                                Text(text = "Güvenli OAuth2 kimlik tespiti yapılıyor...", fontSize = 11.sp, color = textColor.copy(alpha = 0.5f))
-                            }
-                        },
-                        confirmButton = {},
-                        containerColor = canvasBgColor
-                    )
-                }
-            }
         }
     }
 }
